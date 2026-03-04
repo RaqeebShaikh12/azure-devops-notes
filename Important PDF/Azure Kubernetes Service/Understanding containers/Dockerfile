@@ -1,3 +1,3 @@
-FROM debian:latest
-RUN apt-get update && apt-get -y install curl
-CMD ["sleep", "infinity"]
+FROM nginx:alpine
+COPY index.html /usr/share/nginx/html
+EXPOSE 80
