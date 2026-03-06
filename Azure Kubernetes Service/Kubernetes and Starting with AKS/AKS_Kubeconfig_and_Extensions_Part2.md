@@ -151,5 +151,6 @@ You now understand:
 - How Krew makes plugin management easy
 
 These skills are essential for managing multiple AKS clusters and extending Kubernetes functionality efficiently.
+[https://krew.sigs.k8s.io/docs/user-guide/quickstart/].
 
 ---
