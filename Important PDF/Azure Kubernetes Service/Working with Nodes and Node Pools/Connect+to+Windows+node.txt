@@ -1,0 +1,28 @@
+# 1 - Update an AKS cluster to use a password
+az aks update -g aks-rg -n aks-w --windows-admin-password <password> 
+
+# 2 - Create a pod with SSH utilities 
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ssh-pod
+spec:
+  containers:
+  - name: ssh-pod
+    image: nginx
+    lifecycle:
+      postStart:
+        exec:
+          command: ["/bin/bash", "-c", "apt-get update && apt-get install openssh-client vim sshpass -y"]
+  nodeSelector:
+    "kubernetes.io/os": linux
+EOF
+
+# 3 - Exec in the ssh-pod containers
+kubectl exec -it ssh-pod -- bash
+
+# 4 - From ssh-pod connect to the Windows node
+sshpass -p "<password>" ssh  -o StrictHostKeyChecking=no azureuser@<node-name/IP>
+
+# 5 - You are now connected to the node. You can run "powershell" command to unlock the powershell
