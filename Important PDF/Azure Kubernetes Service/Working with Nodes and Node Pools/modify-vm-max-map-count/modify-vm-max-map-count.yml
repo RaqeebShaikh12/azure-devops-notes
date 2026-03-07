@@ -1,0 +1,21 @@
+#Use this only for learning and testing purposes
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: modify-vm-max-map-count
+spec:
+  selector:
+    matchLabels:
+      app: modify-vm-max-map-count
+  template:
+    metadata:
+      labels:
+        app: modify-vm-max-map-count
+    spec:
+      containers:
+      - name: modify-vm-max-map-count
+        image: busybox
+        command: ['sh', '-c', 'sysctl -w vm.max_map_count=<value> && sleep infinity']
+        securityContext:
+          privileged: true
+          hostPID: true
