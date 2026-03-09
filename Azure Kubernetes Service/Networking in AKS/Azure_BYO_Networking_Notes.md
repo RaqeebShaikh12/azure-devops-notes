@@ -1,118 +1,52 @@
-# Azure AKS Networking — Azure CNI Overlay + Bring Your Own VNet/Subnet/NSG/Route Table
+# Azure AKS — Bring Your Own VNet, Subnet, NSG, and Route Table (BYO Networking)
+
+This document contains **only** the BYO networking concept with full detailed notes, terminology explanations, diagrams, and examples.
 
 ---
-# PART 1 — Azure CNI Overlay (Detailed Notes)
+# 1. Concept Overview
+When creating an AKS cluster, Azure can automatically provision networking components such as:
+- Virtual Network (VNet)
+- Subnet
+- Network Security Group (NSG)
+- Route Table
 
-## 1. Why Azure CNI Overlay Exists
-Traditional Azure CNI assigns VNet IPs to every pod, resulting in higher VNet IP consumption and potential address exhaustion.
-Azure CNI Overlay solves this by assigning pod IPs from a separate internal Pod CIDR, not from the VNet.
-
----
-## 2. How Azure CNI Overlay Works
-### Pod IPs from Separate Pod CIDR
-- Pods receive IPs from a logical overlay network.
-- Nodes still receive VNet IPs.
-
-### Overlay Network for Pod-to-Pod
-- Azure creates an overlay routing domain.
-- No UDRs or encapsulation required.
-- Pod-to-pod traffic is routed efficiently inside Azure's networking stack.
-
-### NAT for External Communication
-- Pod → Node → NAT → External target
-- Node IP becomes the source IP visible outside the cluster.
+However, you can **Bring Your Own (BYO)** networking resources to gain more customization and control. AKS will still inject required rules to maintain cluster functionality, but you can customize them as long as you don't break required settings.
 
 ---
-## 3. /24 Allocation Per Node
-Each node receives a /24 block for dynamic pod assignment, enabling predictable scaling.
-
----
-## 4. AKS Cluster Creation Command
-```
-az aks create \
-  -g <resource-group> \
-  -n <cluster-name> \
-  --network-plugin azure \
-  --network-plugin-mode overlay \
-  --node-count 2
-```
-
----
-## 5. Portal Verification
-- Only node IPs appear in VNet connected devices.
-- Pod IPs appear in node ARP tables.
-
----
-## 6. Advantages
-- Conserves VNet IPs.
-- Great for internal pod-to-pod traffic.
-- Supports up to 1000+ nodes.
-- No UDRs required.
-
----
-## 7. Disadvantages
-- NAT overhead for outbound traffic.
-- No AGIC, no Virtual Nodes.
-- Windows Server 2022 only.
-
----
-## 8. Comparison Table
-| Feature | Kubenet | Azure CNI | Azure CNI Overlay |
-|--------|---------|-----------|-------------------|
-| Pod IPs from | Pod CIDR | VNet | Pod CIDR |
-| Uses VNet IPs | No | Yes | No |
-| Best for | Internal | External | Large/internal clusters |
-| Node limit | 400 | 1000-5000 | 1000-5000 |
-| UDR needed | Yes | No | No |
-| Windows support | None | Full | 2022 only |
-| AGIC | Yes | Yes | No |
-
----
-## 9. Other Plugins
-- Azure CNI variants
-- Azure CNI powered by Cilium
-- Bring Your Own CNI
-
----
-# PART 2 — Bring Your Own VNet/Subnet/NSG/Route Table (Detailed Notes)
-
-## 1. Overview
-When you bring your own networking components, AKS still manages certain required rules but allows customization.
-
----
-# Terminology
-## VNet (Virtual Network)
-A private network boundary in Azure for managing traffic isolation.
+# 2. Terminology Explained
+## Virtual Network (VNet)
+A secure, isolated network inside Azure where resources communicate privately.
 
 ## Subnet
-Logical segment inside a VNet used to host AKS nodes.
+A logical segment inside a VNet used to host AKS nodes.
 
-## NSG (Network Security Group)
-A firewall-like resource with inbound and outbound rules.
+## Network Security Group (NSG)
+A firewall-like component controlling inbound and outbound traffic with rules.
 
 ## Route Table
-A set of routing rules that decides traffic next hop.
+Defines how network traffic flows by specifying destination prefixes and next-hop types.
 
 ## Bring Your Own (BYO)
-You create networking components manually and attach them to AKS.
+You manually create networking components and attach them to AKS instead of letting Azure create and lock them.
 
 ---
-# Steps
+# 3. Step-by-Step Process
 ## Step 1 — Create Resource Group
-Example name: `BYO-RG`.
+Example: `BYO-RG`.
 
 ## Step 2 — Create VNet & Subnet
-VNet: `192.168.0.0/16`
-Subnet: `192.168.0.0/24`
+Example:
+- VNet: `my-vnet` using `192.168.0.0/16`
+- Subnet: `my-subnet` using `192.168.0.0/24`
 
 ## Step 3 — Create NSG
-Name: `my-nsg` (default rules initially).
+Name: `my-nsg`. Starts with default Azure rules.
 
 ## Step 4 — Create Route Table
-Name: `my-rt` (initially empty).
+Name: `my-rt`. No routes initially.
 
 ## Step 5 — Attach NSG & Route Table to Subnet
-Subnet → Associate NSG + Route Table.
+Associating both allows custom policies.
 
 ## Step 6 — Create AKS Cluster Using Custom Subnet
 ```
@@ -125,43 +59,48 @@ az aks create \
 ```
 
 ---
-# Validation
-## VNet/Subnet
-- Azure CNI => many connected pod IPs.
+# 4. Validation
+## VNet/Subnet Behavior
+Using Azure CNI, many pod IPs appear under connected devices.
+
+## NSG Behavior
+Contains default rules + AKS-required rules.
+
+## Route Table Behavior
+Starts empty; AKS adds routing entries for pod communication.
+
+---
+# 5. Practical Examples
+## Example 1 — Using Route Table to Block Traffic
+1. Perform lookup:
+   - `nslookup kubernetes.io`
+   - `nc kubernetes.io 443`
+2. Add route:
+   - Destination: `<IP>/32`
+   - Next hop: None (drop)
+3. Traffic is dropped after propagation.
+
+## Example 2 — Using NSG to Block HTTPS
+1. Check connectivity:
+   - `nslookup example.com`
+   - `nc example.com 443`
+2. Add NSG outbound deny rule for port 443.
+3. HTTPS fails; HTTP still works.
+
+---
+# 6. Real-World Use Cases
+## Route Table
+- Forcing egress through firewalls
+- Routing to on-prem networks
+- Blocking unwanted traffic
 
 ## NSG
-- Contains default rules + AKS injected rules.
-
-## Route Table
-- Initially no custom rules.
-- AKS injects pod routing entries.
+- Zero-trust security
+- IP/port-based restrictions
+- Enforcing compliance
 
 ---
-# Examples
-## Route Table Example — Blocking kubernetes.io
-1. nslookup + nc works initially.
-2. Add route for `kubernetes.io-IP/32` with next hop "None".
-3. nc times out → route works.
-
-## NSG Example — Blocking HTTPS to example.com
-1. nslookup + nc works initially.
-2. Add outbound deny rule for HTTPS.
-3. nc 443 fails but nc 80 works.
-
----
-# Real World Use Cases
-## Route Table
-- Force tunneling
-- Azure Firewall
-- On-prem routing
-
-## NSG
-- Zero trust policies
-- IP-based restrictions
-- Port-level restrictions
-
----
-# ASCII Diagram
+# 7. Diagram
 ```
 +----------------------------+
 |           VNet             |
@@ -177,3 +116,5 @@ az aks create \
 +----------------------------+
 ```
 
+---
+# End of BYO Networking Notes
